@@ -30,6 +30,7 @@
 #include <string.h>
 
 #include <libudev.h>
+#include <xf86drm.h>
 
 #include "gbm_driint.h"
 #define DRIVER_MAP_DRI2_ONLY
@@ -43,6 +44,7 @@ dri_fd_get_driver_name(int fd)
    const char *pci_id;
    char *driver = NULL;
    int vendor_id, chip_id, i, j;
+   drmVersionPtr version;
 
    udev = udev_new();
    device = _gbm_udev_device_new_from_fd(udev, fd);
@@ -56,9 +58,22 @@ dri_fd_get_driver_name(int fd)
    }
 
    pci_id = udev_device_get_property_value(parent, "PCI_ID");
-   if (pci_id == NULL ||
-       sscanf(pci_id, "%x:%x", &vendor_id, &chip_id) != 2) {
-      fprintf(stderr, "gbm: malformed or no PCI ID");
+   if (pci_id == NULL) {
+      version = drmGetVersion(fd);
+      if (!version) {
+         fprintf(stderr, "gbm: cannot get DRM module version\n");
+         goto out;
+      }
+
+      driver = strndup(version->name, version->name_len);
+      _gbm_log("using driver %s for %d\n", driver, fd);
+
+      drmFreeVersion(version);
+      goto out;
+   }
+
+   if (sscanf(pci_id, "%x:%x", &vendor_id, &chip_id) != 2) {
+      fprintf(stderr, "gbm: malformed PCI ID");
       goto out;
    }
 
