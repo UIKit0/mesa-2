@@ -37,6 +37,7 @@ LIBDRM_INTEL_REQUIRED=2.4.38
 LIBDRM_NVVIEUX_REQUIRED=2.4.33
 LIBDRM_NOUVEAU_REQUIRED="2.4.33 libdrm >= 2.4.41"
 LIBDRM_FREEDRENO_REQUIRED=2.4.39
+LIBDRM_TEGRA_REQUIRED=2.4.42
 DRI2PROTO_REQUIRED=2.6
 GLPROTO_REQUIRED=1.4.14
 LIBDRM_XORG_REQUIRED=2.4.24
@@ -1817,6 +1818,13 @@ if test "x$with_gallium_drivers" != x; then
             gallium_check_st "freedreno/drm" "dri-freedreno" "" "" "" ""
             DRICOMMON_NEED_LIBDRM=yes
             ;;
+        xtegra)
+            HAVE_GALLIUM_TEGRA=yes
+            PKG_CHECK_MODULES([TEGRA], [libdrm_tegra >= $LIBDRM_TEGRA_REQUIRED])
+            gallium_require_drm_loader
+            GALLIUM_DRIVERS_DIRS="$GALLIUM_DRIVERS_DIRS tegra"
+            gallium_check_st "tegra/drm" "dri-tegra" "" "" "" ""
+            ;;
         xswrast)
             HAVE_GALLIUM_SOFTPIPE=yes
             GALLIUM_DRIVERS_DIRS="$GALLIUM_DRIVERS_DIRS softpipe"
@@ -1887,6 +1895,7 @@ AM_CONDITIONAL(HAVE_GALLIUM_R600, test "x$HAVE_GALLIUM_R600" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_RADEONSI, test "x$HAVE_GALLIUM_RADEONSI" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_NOUVEAU, test "x$HAVE_GALLIUM_NOUVEAU" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_FREEDRENO, test "x$HAVE_GALLIUM_FREEDRENO" = xyes)
+AM_CONDITIONAL(HAVE_GALLIUM_TEGRA, test "x$HAVE_GALLIUM_TEGRA" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_SOFTPIPE, test "x$HAVE_GALLIUM_SOFTPIPE" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_LLVMPIPE, test "x$HAVE_GALLIUM_LLVMPIPE" = xyes)
 
@@ -2004,6 +2013,7 @@ AC_CONFIG_FILES([Makefile
 		src/gallium/drivers/rbug/Makefile
 		src/gallium/drivers/softpipe/Makefile
 		src/gallium/drivers/svga/Makefile
+		src/gallium/drivers/tegra/Makefile
 		src/gallium/drivers/trace/Makefile
 		src/gallium/state_trackers/Makefile
 		src/gallium/state_trackers/clover/Makefile
@@ -2025,6 +2035,7 @@ AC_CONFIG_FILES([Makefile
 		src/gallium/targets/dri-ilo/Makefile
 		src/gallium/targets/dri-nouveau/Makefile
 		src/gallium/targets/dri-swrast/Makefile
+		src/gallium/targets/dri-tegra/Makefile
 		src/gallium/targets/dri-vmwgfx/Makefile
 		src/gallium/targets/egl-static/Makefile
 		src/gallium/targets/gbm/Makefile
@@ -2061,6 +2072,7 @@ AC_CONFIG_FILES([Makefile
 		src/gallium/winsys/sw/wayland/Makefile
 		src/gallium/winsys/sw/wrapper/Makefile
 		src/gallium/winsys/sw/xlib/Makefile
+		src/gallium/winsys/tegra/drm/Makefile
 		src/gbm/Makefile
 		src/gbm/main/gbm.pc
 		src/glsl/Makefile

@@ -54,6 +54,12 @@ SUBDIRS += dri-freedreno
 endif
 endif
 
+if HAVE_GALLIUM_TEGRA
+if HAVE_DRI
+SUBDIRS += dri-tegra
+endif
+endif
+
 if HAVE_GALLIUM_I915
 if HAVE_DRI
 SUBDIRS += dri-i915

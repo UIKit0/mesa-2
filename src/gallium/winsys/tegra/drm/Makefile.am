@@ -1,4 +1,4 @@
-# Copyright © 2013 Intel Corporation
+# Copyright © 2012 Intel Corporation
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -20,54 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-SUBDIRS = sw/null
+include $(top_srcdir)/src/gallium/Automake.inc
 
-if NEED_WINSYS_XLIB
-SUBDIRS += sw/xlib
-endif
+AM_CFLAGS = \
+	-I$(top_srcdir)/src/gallium/drivers \
+	$(GALLIUM_CFLAGS) \
+	$(TEGRA_CFLAGS)
 
-if HAVE_DRI
-SUBDIRS += sw/dri
-endif
+noinst_LTLIBRARIES = libtegradrm.la
 
-if HAVE_EGL_PLATFORM_FBDEV
-SUBDIRS += sw/fbdev
-endif
-
-if HAVE_EGL_PLATFORM_WAYLAND
-SUBDIRS += sw/wayland
-endif
-
-if NEED_WINSYS_WRAPPER
-SUBDIRS += sw/wrapper
-endif
-
-if NEED_NONNULL_WINSYS
-if HAVE_GALLIUM_FREEDRENO
-SUBDIRS += freedreno/drm
-endif
-
-if HAVE_GALLIUM_TEGRA
-SUBDIRS += tegra/drm
-endif
-
-if HAVE_GALLIUM_I915
-SUBDIRS += i915/sw i915/drm
-endif
-
-if HAVE_GALLIUM_ILO
-SUBDIRS += intel/drm
-endif
-
-if HAVE_GALLIUM_NOUVEAU
-SUBDIRS += nouveau/drm
-endif
-
-if NEED_RADEON_DRM_WINSYS
-SUBDIRS += radeon/drm
-endif
-
-if HAVE_GALLIUM_SVGA
-SUBDIRS += svga/drm
-endif
-endif
+libtegradrm_la_SOURCES = \
+	tegra_drm_winsys.c
