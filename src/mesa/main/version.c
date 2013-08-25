@@ -357,7 +357,6 @@ compute_version_es2(struct gl_context *ctx)
                               ctx->Extensions.EXT_blend_minmax &&
                               ctx->Extensions.ARB_vertex_shader &&
                               ctx->Extensions.ARB_fragment_shader &&
-                              ctx->Extensions.ARB_texture_non_power_of_two &&
                               ctx->Extensions.EXT_blend_equation_separate);
    /* FINISHME: This list isn't quite right. */
    const GLboolean ver_3_0 = (ctx->Extensions.ARB_half_float_vertex &&
