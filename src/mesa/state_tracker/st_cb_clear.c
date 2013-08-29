@@ -408,8 +408,7 @@ st_Clear(struct gl_context *ctx, GLbitfield mask)
             if (!strb || !strb->surface)
                continue;
 
-            if (is_scissor_enabled(ctx, rb) ||
-                is_color_masked(ctx, colormask_index))
+            if (is_color_masked(ctx, colormask_index))
                quad_buffers |= PIPE_CLEAR_COLOR;
             else
                clear_buffers |= PIPE_CLEAR_COLOR;
@@ -420,19 +419,14 @@ st_Clear(struct gl_context *ctx, GLbitfield mask)
    if (mask & BUFFER_BIT_DEPTH) {
       struct st_renderbuffer *strb = st_renderbuffer(depthRb);
 
-      if (strb->surface) {
-         if (is_scissor_enabled(ctx, depthRb))
-            quad_buffers |= PIPE_CLEAR_DEPTH;
-         else
-            clear_buffers |= PIPE_CLEAR_DEPTH;
-      }
+      if (strb->surface)
+         clear_buffers |= PIPE_CLEAR_DEPTH;
    }
    if (mask & BUFFER_BIT_STENCIL) {
       struct st_renderbuffer *strb = st_renderbuffer(stencilRb);
 
       if (strb->surface) {
-         if (is_scissor_enabled(ctx, stencilRb) ||
-             is_stencil_masked(ctx, stencilRb))
+         if (is_stencil_masked(ctx, stencilRb))
             quad_buffers |= PIPE_CLEAR_STENCIL;
          else
             clear_buffers |= PIPE_CLEAR_STENCIL;
@@ -462,8 +456,23 @@ st_Clear(struct gl_context *ctx, GLbitfield mask)
 			    is_integer);
       }
 
-      st->pipe->clear(st->pipe, clear_buffers, &clearColor,
-                      ctx->Depth.Clear, ctx->Stencil.Clear);
+      if (is_scissor_enabled(ctx, ctx->DrawBuffer->Attachment[0].Renderbuffer)) {
+        /* clear with clear_render_target and/or clear_depthstencil */
+        if (clear_buffers & PIPE_CLEAR_COLOR)
+          for (i = 0; i < st->state.framebuffer.nr_cbufs; ++i)
+            st->pipe->clear_render_target(st->pipe, st->state.framebuffer.cbufs[i],
+                                          &clearColor,
+                                          ctx->Scissor.X, ctx->Scissor.Y,
+                                          ctx->Scissor.Width, ctx->Scissor.Height);
+        if (clear_buffers & PIPE_CLEAR_DEPTHSTENCIL)
+          st->pipe->clear_depth_stencil(st->pipe, st->state.framebuffer.zsbuf,
+                                       clear_buffers & PIPE_CLEAR_DEPTHSTENCIL,
+                                       ctx->Depth.Clear, ctx->Stencil.Clear,
+                                       ctx->Scissor.X, ctx->Scissor.Y,
+                                       ctx->Scissor.Width, ctx->Scissor.Height);
+      } else
+        st->pipe->clear(st->pipe, clear_buffers, &clearColor,
+                        ctx->Depth.Clear, ctx->Stencil.Clear);
    }
    if (mask & BUFFER_BIT_ACCUM)
       _mesa_clear_accum_buffer(ctx);
