@@ -202,6 +202,7 @@ tegra_screen_resource_create(struct pipe_screen *pscreen,
 	resource->pitch = template->width0 * util_format_get_blocksize(template->format);
 	height = template->height0;
 
+	resource->tiled = 0;
 	if (template->bind & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_SAMPLER_VIEW | PIPE_BIND_SCANOUT)) {
 		resource->pitch = template->width0 * util_format_get_blocksize(template->format);
 		resource->pitch = align(resource->pitch, 32);
@@ -212,6 +213,7 @@ tegra_screen_resource_create(struct pipe_screen *pscreen,
 		if (template->usage != PIPE_USAGE_STAGING && !(template->bind & PIPE_BIND_SHARED)) {
 			flags |= DRM_TEGRA_GEM_CREATE_TILED;
 			height = align(height, 16);
+			resource->tiled = 1;
 		}
 	}
 
@@ -356,7 +358,7 @@ static void tegra_blit(struct pipe_context *pcontext,
 	 * [20:20] destination write tile mode (0: linear, 1: tiled)
 	 * [ 0: 0] tile mode Y/RGB (0: linear, 1: tiled)
 	 */
-	value = (1 << 20) | 1;
+	value = (dst->tiled << 20) | src->tiled;
 	host1x_pushbuf_push(pb, value);                 /* 0x046 - tilemode */
 
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x02b, 0xe149));
@@ -467,7 +469,8 @@ static int tegra_fill(struct tegra_channel *gr2d,
 	host1x_pushbuf_push(pb, fill_value);           /* 0x035 - srcfgc */
 
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x46, 1));
-	host1x_pushbuf_push(pb, 0x00100000);           /* 0x046 - tilemode */
+	value = dst->tiled << 20;
+	host1x_pushbuf_push(pb, value);                /* 0x046 - tilemode */
 
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x38, 0x05));
 	host1x_pushbuf_push(pb, height << 16 | width); /* 0x038 - dstsize */
