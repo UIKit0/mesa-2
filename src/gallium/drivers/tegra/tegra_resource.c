@@ -264,8 +264,110 @@ static void tegra_resource_copy_region(struct pipe_context *pcontext,
 static void tegra_blit(struct pipe_context *pcontext,
 		       const struct pipe_blit_info *info)
 {
+	int err, value;
+	struct tegra_context *context = tegra_context(pcontext);
+	struct tegra_screen *screen = tegra_screen(context->base.screen);
+	struct tegra_channel *gr2d = context->gr2d;
+	struct host1x_pushbuf *pb;
+	struct tegra_resource *dst, *src;
+
 	fprintf(stdout, "> %s(pcontext=%p, info=%p)\n", __func__, pcontext,
 		info);
+
+	dst = tegra_resource(info->dst.resource);
+	src = tegra_resource(info->src.resource);
+
+	printf("blit-target: %p\n", dst);
+	printf("blit-source: %p\n", tegra_resource(info->src.resource));
+
+	printf("*** append job: %p\n", gr2d->job);
+	err = host1x_job_append(gr2d->job, gr2d->cmdbuf, 0, &pb);
+	if (err < 0) {
+		fprintf(stderr, "host1x_job_append() failed: %d\n", err);
+		goto out;
+	}
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_SETCL(0, HOST1X_CLASS_GR2D, 0));
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x009, 0x9));
+	host1x_pushbuf_push(pb, 0x0000003a);            /* 0x009 - trigger */
+	host1x_pushbuf_push(pb, 0x00000000);            /* 0x00c - cmdsel */
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x01e, 0x7));
+	host1x_pushbuf_push(pb, 0x00000000);            /* 0x01e - controlsecond */
+	/*
+	 * [20:20] source color depth (0: mono, 1: same)
+	 * [17:16] destination color depth (0: 8 bpp, 1: 16 bpp, 2: 32 bpp)
+	 */
+
+	value = 1 << 20;
+	switch (util_format_get_blocksize(dst->base.b.format)) {
+	case 1:
+		value |= 0 << 16;
+		break;
+	case 2:
+		value |= 1 << 16;
+		break;
+	case 4:
+		value |= 2 << 16;
+		break;
+	default:
+		assert(0);
+	}
+
+	host1x_pushbuf_push(pb, value);                 /* 0x01f - controlmain */
+	host1x_pushbuf_push(pb, 0x000000cc);            /* 0x020 - ropfade */
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x046, 1));
+
+	/*
+	 * [20:20] destination write tile mode (0: linear, 1: tiled)
+	 * [ 0: 0] tile mode Y/RGB (0: linear, 1: tiled)
+	 */
+	value = (1 << 20) | 1;
+	host1x_pushbuf_push(pb, value);                 /* 0x046 - tilemode */
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x02b, 0xe149));
+	host1x_pushbuf_relocate(pb, dst->bo, 0, 0);
+
+	host1x_pushbuf_push(pb, 0xdeadbeef);            /* 0x02b - dstba */
+
+	host1x_pushbuf_push(pb, dst->pitch);            /* 0x02e - dstst */
+
+	host1x_pushbuf_relocate(pb, src->bo, 0, 0);
+	host1x_pushbuf_push(pb, 0xdeadbeef);            /* 0x031 - srcba */
+
+	host1x_pushbuf_push(pb, src->pitch);            /* 0x033 - srcst */
+
+	value = info->dst.box.height << 16 | info->dst.box.width;
+	host1x_pushbuf_push(pb, value);                 /* 0x038 - dstsize */
+
+	value = info->src.box.y << 16 | info->src.box.x;
+	host1x_pushbuf_push(pb, value );                /* 0x039 - srcps */
+
+	value = info->dst.box.y << 16 | info->dst.box.x;
+	host1x_pushbuf_push(pb, value);                 /* 0x03a - dstps */
+
+	/* increase syncpt */
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x00, 1));
+	host1x_pushbuf_sync(pb, HOST1X_SYNCPT_COND_OP_DONE);
+
+	{
+		struct host1x_fence *fence;
+		printf("*** submit job: %p\n", gr2d->job);
+		err = drm_tegra_submit(screen->drm, gr2d->job, &fence);
+		if (err < 0) {
+			fprintf(stderr, "drm_tegra_submit() failed: %d\n", err);
+			goto out;
+		}
+		err = drm_tegra_wait(screen->drm, fence, -1);
+		if (err < 0) {
+			fprintf(stderr, "drm_tegra_wait() failed: %d\n", err);
+			goto out;
+		}
+	}
+
+out:
 	fprintf(stdout, "< %s()\n", __func__);
 }
 
