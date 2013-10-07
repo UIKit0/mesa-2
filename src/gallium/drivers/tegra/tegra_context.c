@@ -62,29 +62,24 @@ static void tegra_channel_delete(struct tegra_channel *channel)
 	fprintf(stdout, "< %s()\n", __func__);
 }
 
-static void tegra_channel_flush(struct tegra_channel *channel)
+static int tegra_channel_flush(struct tegra_channel *channel, struct host1x_fence **fence)
 {
 	struct pipe_screen *pscreen = channel->context->base.screen;
 	struct tegra_screen *screen = tegra_screen(pscreen);
-	struct host1x_fence *fence;
 	int err;
 
 	fprintf(stdout, "> %s(channel=%p)\n", __func__, channel);
 
-	err = drm_tegra_submit(screen->drm, channel->job, &fence);
+	printf("*** submit job: %p\n", channel->job);
+	err = drm_tegra_submit(screen->drm, channel->job, fence);
 	if (err < 0) {
 		fprintf(stderr, "drm_tegra_submit() failed: %d\n", err);
 		goto out;
 	}
 
-	err = drm_tegra_wait(screen->drm, fence, -1);
-	if (err < 0) {
-		fprintf(stderr, "drm_tegra_wait() failed: %d\n", err);
-		goto out;
-	}
-
 out:
 	fprintf(stdout, "< %s()\n", __func__);
+	return err;
 }
 
 static void tegra_context_destroy(struct pipe_context *pcontext)
@@ -104,25 +99,25 @@ static void tegra_context_flush(struct pipe_context *pcontext,
 				struct pipe_fence_handle **pfence,
 				enum pipe_flush_flags flags)
 {
+	int err;
 	struct tegra_context *context = tegra_context(pcontext);
+	struct host1x_fence *fence;
 
 	fprintf(stdout, "> %s(pcontext=%p, pfence=%p, flags=%x)\n", __func__,
 		pcontext, pfence, flags);
 
-	tegra_channel_flush(context->gr2d);
-	tegra_channel_flush(context->gr3d);
-
-	if (pfence) {
-		struct tegra_fence *fence;
-
-		fence = calloc(1, sizeof(*fence));
-		if (!fence)
-			goto out;
-
-		pipe_reference_init(&fence->reference, 1);
-
-		*pfence = (struct pipe_fence_handle *)fence;
+	err = tegra_channel_flush(context->gr2d, &fence);
+	if (err < 0) {
+		fprintf(stderr, "tegra_channel_flush(context->gr2d) failed: %d (%s)\n", err, strerror(-err));
+		goto out;
 	}
+	err = tegra_channel_flush(context->gr3d, &fence);
+	if (err < 0) {
+		fprintf(stderr, "tegra_channel_flush(context->gr3d) failed: %d\n", err);
+		goto out;
+	}
+	if (pfence)
+		*pfence = (struct pipe_fence_handle *)tegra_fence_create(fence);
 
 out:
 	fprintf(stdout, "< %s()\n", __func__);
