@@ -206,7 +206,7 @@ extern void
 st_texture_image_data(struct st_context *st,
                       struct pipe_resource *dst,
                       GLuint face, GLuint level, void *src,
-                      GLuint src_row_pitch, GLuint src_image_pitch);
+                      GLuint src_row_stride, GLuint src_image_stride);
 
 
 /* Copy an image between two textures
