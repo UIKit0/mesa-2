@@ -50,13 +50,6 @@ struct fetch_shade_emit {
    struct draw_pt_middle_end base;
    struct draw_context *draw;
 
-   /* Temporaries:
-    */
-   const float *constants;
-   unsigned pitch[PIPE_MAX_ATTRIBS];
-   const ubyte *src[PIPE_MAX_ATTRIBS];
-   unsigned prim;
-
    struct draw_vs_variant_key key;
    struct draw_vs_variant *active;
 
