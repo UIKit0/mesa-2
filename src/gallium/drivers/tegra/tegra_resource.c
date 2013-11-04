@@ -409,6 +409,77 @@ static uint32_t pack_color(enum pipe_format format, const float *rgba)
 	return uc.ui;
 }
 
+static int tegra_fill(struct tegra_channel *gr2d,
+                      struct tegra_resource *dst,
+                      const union pipe_color_union *color,
+                      unsigned dstx, unsigned dsty,
+                      unsigned width, unsigned height)
+{
+	struct host1x_pushbuf *pb;
+	uint32_t value;
+	int err;
+
+	err = host1x_job_append(gr2d->job, gr2d->cmdbuf, 0, &pb);
+	if (err < 0) {
+		fprintf(stderr, "host1x_job_append() failed: %d\n", err);
+		return -1;
+	}
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_SETCL(0, HOST1X_CLASS_GR2D, 0));
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x09, 0x09));
+	host1x_pushbuf_push(pb, 0x0000003a);           /* 0x009 - trigger */
+	host1x_pushbuf_push(pb, 0x00000000);           /* 0x00c - cmdsel */
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x1e, 0x07));
+	host1x_pushbuf_push(pb, 0x00000000);           /* 0x01e - controlsecond */
+
+	value  = 1 << 6; /* fill mode */
+	value |= 1 << 2; /* turbofill */
+	switch (util_format_get_blocksize(dst->base.b.format)) {
+	case 1:
+		value |= 0 << 16;
+		break;
+	case 2:
+		value |= 1 << 16;
+		break;
+	case 4:
+		value |= 2 << 16;
+		break;
+	default:
+		assert(0);
+		return -1;
+	}
+	host1x_pushbuf_push(pb, value);                /* 0x01f - controlmain */
+
+	host1x_pushbuf_push(pb, 0x000000cc);           /* 0x020 - ropfade */
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x2b, 0x09));
+
+	host1x_pushbuf_relocate(pb, dst->bo, 0, 0);
+	host1x_pushbuf_push(pb, 0xdeadbeef);           /* 0x02b - dstba */
+
+	host1x_pushbuf_push(pb, dst->pitch);           /* 0x02e - dstst */
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x35, 1));
+
+	value = pack_color(dst->base.b.format, color->f);
+	host1x_pushbuf_push(pb, value);                /* 0x035 - srcfgc */
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x46, 1));
+	host1x_pushbuf_push(pb, 0x00100000);           /* 0x046 - tilemode */
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x38, 0x05));
+	host1x_pushbuf_push(pb, height << 16 | width); /* 0x038 - dstsize */
+	host1x_pushbuf_push(pb, dsty << 16 | dstx);    /* 0x03a - dstps */
+
+	/* increase syncpt */
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x00, 1));
+	host1x_pushbuf_sync(pb, HOST1X_SYNCPT_COND_OP_DONE);
+
+	return 0;
+}
+
 static void tegra_clear(struct pipe_context *pcontext, unsigned int buffers,
 			const union pipe_color_union *color, double depth,
 			unsigned int stencil)
@@ -422,76 +493,10 @@ static void tegra_clear(struct pipe_context *pcontext, unsigned int buffers,
 	fb = &context->framebuffer.base;
 
 	if (buffers & PIPE_CLEAR_COLOR) {
-		struct pipe_resource *texture = fb->cbufs[0]->texture;
-		struct tegra_channel *gr2d = context->gr2d;
-		struct tegra_resource *resource;
-		unsigned int width, height;
-		struct host1x_pushbuf *pb;
-		uint32_t value;
-		int err;
-
-		resource = tegra_resource(fb->cbufs[0]->texture);
-		width = texture->width0;
-		height = texture->height0;
-
-		err = host1x_job_append(gr2d->job, gr2d->cmdbuf, 0, &pb);
-		if (err < 0) {
-			fprintf(stderr, "host1x_job_append() failed: %d\n", err);
+		if (tegra_fill(context->gr2d, tegra_resource(fb->cbufs[0]->texture),
+                      color, 0, 0,
+		      fb->cbufs[0]->width, fb->cbufs[0]->height) < 0)
 			goto out;
-		}
-
-		host1x_pushbuf_push(pb, HOST1X_OPCODE_SETCL(0, HOST1X_CLASS_GR2D, 0));
-
-		host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x09, 0x09));
-		host1x_pushbuf_push(pb, 0x0000003a);
-		host1x_pushbuf_push(pb, 0x00000000);
-
-		host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x1e, 0x07));
-		host1x_pushbuf_push(pb, 0x00000000);           /* 0x01e - controlsecond */
-
-		value  = 1 << 6; /* fill mode */
-		value |= 1 << 2; /* turbofill */
-		switch (util_format_get_blocksize(resource->base.b.format)) {
-		case 1:
-			value |= 0 << 16;
-			break;
-		case 2:
-			value |= 1 << 16;
-			break;
-		case 4:
-			value |= 2 << 16;
-			break;
-		default:
-			assert(0);
-		}
-		host1x_pushbuf_push(pb, value);                /* 0x01f - controlmain */
-
-		host1x_pushbuf_push(pb, 0x000000cc);           /* 0x020 - ropfade */
-
-		host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x2b, 0x09));
-
-		host1x_pushbuf_relocate(pb, resource->bo, 0, 0);
-		host1x_pushbuf_push(pb, 0xdeadbeef);           /* 0x02b - dstba */
-
-		host1x_pushbuf_push(pb, resource->pitch);      /* 0x02e - dstst */
-
-		host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x35, 1));
-
-		value = pack_color(fb->cbufs[0]->format, color->f);
-		host1x_pushbuf_push(pb, value);                /* 0x035 - srcfcg */
-
-		host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x46, 1));
-
-		host1x_pushbuf_push(pb, 0x00100000);           /* 0x046 - tilemode */
-
-		host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x38, 0x05));
-
-		host1x_pushbuf_push(pb, height << 16 | width); /* 0x038 - dstsize */
-
-		host1x_pushbuf_push(pb, 0x00000000);           /* 0x03a - dstps */
-
-		host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x00, 1));
-		host1x_pushbuf_sync(pb, HOST1X_SYNCPT_COND_OP_DONE);
 	}
 
 	if (buffers & PIPE_CLEAR_DEPTH) {
