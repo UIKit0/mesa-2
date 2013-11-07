@@ -411,7 +411,7 @@ static uint32_t pack_color(enum pipe_format format, const float *rgba)
 
 static int tegra_fill(struct tegra_channel *gr2d,
                       struct tegra_resource *dst,
-                      const union pipe_color_union *color,
+                      uint32_t fill_value, int blocksize,
                       unsigned dstx, unsigned dsty,
                       unsigned width, unsigned height)
 {
@@ -436,7 +436,7 @@ static int tegra_fill(struct tegra_channel *gr2d,
 
 	value  = 1 << 6; /* fill mode */
 	value |= 1 << 2; /* turbofill */
-	switch (util_format_get_blocksize(dst->base.b.format)) {
+	switch (blocksize) {
 	case 1:
 		value |= 0 << 16;
 		break;
@@ -463,8 +463,7 @@ static int tegra_fill(struct tegra_channel *gr2d,
 
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x35, 1));
 
-	value = pack_color(dst->base.b.format, color->f);
-	host1x_pushbuf_push(pb, value);                /* 0x035 - srcfgc */
+	host1x_pushbuf_push(pb, fill_value);           /* 0x035 - srcfgc */
 
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x46, 1));
 	host1x_pushbuf_push(pb, 0x00100000);           /* 0x046 - tilemode */
@@ -494,19 +493,21 @@ static void tegra_clear(struct pipe_context *pcontext, unsigned int buffers,
 
 	if (buffers & PIPE_CLEAR_COLOR) {
 		int i;
-		for (i = 0; i < fb->nr_cbufs; ++i)
-			if (tegra_fill(context->gr2d, tegra_resource(fb->cbufs[i]->texture),
-			    color, 0, 0,
-			    fb->cbufs[i]->width, fb->cbufs[i]->height) < 0)
+		for (i = 0; i < fb->nr_cbufs; ++i) {
+			struct pipe_surface *dst = fb->cbufs[i];
+			if (tegra_fill(context->gr2d, tegra_resource(dst->texture),
+			    pack_color(dst->format, color->f), util_format_get_blocksize(dst->format),
+			    0, 0, dst->width, dst->height) < 0)
 				goto out;
+		}
 	}
 
-	if (buffers & PIPE_CLEAR_DEPTH) {
-		fprintf(stdout, "TODO: clear depth buffer\n");
-	}
-
-	if (buffers & PIPE_CLEAR_STENCIL) {
-		fprintf(stdout, "TODO: clear stencil buffer\n");
+	if (buffers & PIPE_CLEAR_DEPTH || buffers & PIPE_CLEAR_STENCIL) {
+		if (tegra_fill(context->gr2d, tegra_resource(fb->zsbuf->texture),
+		    util_pack_z_stencil(depth, stencil, fb->zsbuf->format),
+		    util_format_get_blocksize(fb->zsbuf->format),
+		    0, 0, fb->zsbuf->width, fb->zsbuf->height) < 0)
+			goto out;
 	}
 
 out:
@@ -522,7 +523,9 @@ static void tegra_clear_render_target(struct pipe_context *pipe,
 	fprintf(stdout, "> %s(pipe=%p, dst=%p, color=%p, dstx=%d, dsty=%d, width=%d, height=%d)\n",
 		__func__, pipe, dst, color, dstx, dsty, width, height);
 
-	tegra_fill(tegra_context(pipe)->gr2d, tegra_resource(dst->texture), color, dstx, dsty, width, height);
+	tegra_fill(tegra_context(pipe)->gr2d, tegra_resource(dst->texture),
+	           pack_color(dst->format, color->f), util_format_get_blocksize(dst->format),
+		   dstx, dsty, width, height);
 
 	fprintf(stdout, "< %s()\n", __func__);
 }
@@ -535,7 +538,15 @@ static void tegra_clear_depth_stencil(struct pipe_context *pipe,
                                unsigned dstx, unsigned dsty,
                                unsigned width, unsigned height)
 {
-	fprintf(stdout, "TODO: clear depth-stencil\n");
+	fprintf(stdout, "> %s(pipe=%p, dst=%p, clear_flags=%x, depth=%f, stencil=%d, dstx=%d, dsty=%d, width=%d, height=%d)\n",
+		__func__, pipe, dst, clear_flags, depth, stencil, dstx, dsty, width, height);
+
+	tegra_fill(tegra_context(pipe)->gr2d, tegra_resource(dst->texture),
+	           util_pack_z_stencil(depth, stencil, dst->format),
+	           util_format_get_blocksize(dst->format),
+	           dstx, dsty, width, height);
+
+	fprintf(stdout, "< %s()\n", __func__);
 }
 
 static void tegra_flush_resource(struct pipe_context *ctx, struct pipe_resource *resource)
